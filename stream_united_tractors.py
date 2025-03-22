@@ -66,8 +66,8 @@ if uploaded_file is not None:
         ax.legend()
         st.pyplot(fig)
 
-    # Prediksi 15 hari ke depan
-    st.header("Prediksi 15 Hari ke Depan")
+    # Prediksi 15 hari ke depan mulai dari 1 Januari 2025
+    st.header("Prediksi 15 Hari ke Depan (Mulai 1 Januari 2025)")
 
     # Buat data input untuk prediksi 15 hari ke depan
     last_lag1 = X_test[-1][0]  # Ambil nilai terakhir dari X_test
@@ -80,20 +80,20 @@ if uploaded_file is not None:
         last_lag1 = next_prediction
 
     # Buat DataFrame untuk menyimpan hasil prediksi
-    future_dates = pd.date_range(start=data['Date'].iloc[-1] + pd.Timedelta(days=1), periods=15, freq='D')
+    future_dates = pd.date_range(start='2025-01-01', periods=15, freq='D')  # Mulai dari 1 Januari 2025
     forecast_df = pd.DataFrame({
         'Tanggal': future_dates,
         'Prediksi_Harga': future_predictions
     })
 
     # Tampilkan hasil prediksi
-    st.write("Hasil Prediksi 15 Hari ke Depan:")
+    st.write("Hasil Prediksi 15 Hari ke Depan (Mulai 1 Januari 2025):")
     st.write(forecast_df)
 
     # Plot hasil prediksi
     fig, ax = plt.subplots()
     ax.plot(future_dates, future_predictions, marker='o', linestyle='-', color='blue')
-    ax.set_title('Prediksi Harga Saham 15 Hari ke Depan')
+    ax.set_title('Prediksi Harga Saham 15 Hari ke Depan (Mulai 1 Januari 2025)')
     ax.set_xlabel('Tanggal')
     ax.set_ylabel('Prediksi Harga')
     ax.grid(True)
