@@ -1,0 +1,7 @@
+[theme]
+base = "light"  # Pilihan: "light" atau "dark"
+primaryColor = "#FF5733"  # Warna utama (HEX)
+backgroundColor = "#FFFFFF"  # Warna latar belakang (HEX)
+secondaryBackgroundColor = "#F0F2F6"  # Warna latar belakang sekunder (HEX)
+textColor = "#000000"  # Warna teks (HEX)
+font = "sans serif"  # Pilihan font: "sans serif", "serif", "monospace"
