@@ -10,6 +10,7 @@ from sklearn.svm import SVR
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_percentage_error
 import matplotlib.pyplot as plt
+from pandas.tseries.offsets import BDay  # Business Day
 
 # Set random seed for reproducibility
 np.random.seed(42)
@@ -193,36 +194,76 @@ plt.grid(True)
 plt.show()
 
 # ====================================================
-# Peramalan 15 Periode ke Depan
+# 6. Peramalan 15 Hari Trading ke Depan (FIXED VERSION)
 # ====================================================
 
-# Buat data input untuk prediksi 15 periode ke depan
-# Misalnya, kita menggunakan nilai terakhir dari X_test sebagai input pertama
-last_lag1 = X_test[-1][0]  # Ambil nilai terakhir dari X_test
-future_predictions = []
-for i in range(15):
-    # Prediksi nilai y untuk periode berikutnya
-    next_prediction = best_model.predict([[last_lag1]])[0]
-    future_predictions.append(next_prediction)
-    # Update last_lag1 untuk prediksi berikutnya
-    last_lag1 = next_prediction
+from pandas.tseries.holiday import AbstractHolidayCalendar, Holiday
+import datetime
 
-# Buat DataFrame untuk menyimpan hasil peramalan
-future_dates = pd.date_range(start='2025-01-01', periods=15, freq='D')  # Tanggal dari 1 Januari 2025 hingga 15 Januari 2025
+# 1. Definisikan Kalender Libur yang Akurat
+class ExactHolidayCalendar(AbstractHolidayCalendar):
+    rules = [
+        # Libur Desember
+        Holiday('New Year Eve', month=12, day=31),
+        
+        # Libur Januari
+        Holiday('New Year', month=1, day=1),
+        # Holiday('Libur Contoh', month=1, day=2),  # Hapus komentar jika 2 Jan libur
+        # Tambahkan semua libur resmi sesuai bursa
+    ]
+
+# 2. Dapatkan tanggal terakhir dari data
+last_date = data['Date'].iloc[-1]
+print(f"\nTanggal terakhir dalam dataset: {last_date}")
+
+# 3. Generate kalender libur
+cal = ExactHolidayCalendar()
+holidays = cal.holidays(start=last_date, end=last_date + datetime.timedelta(days=60))
+
+# 4. Fungsi validasi hari trading
+def is_trading_day(date):
+    # Senin-Jumat dan bukan hari libur
+    return date.weekday() < 5 and date not in holidays
+
+# 5. Generate 15 hari trading VALID
+future_dates = []
+current_date = last_date
+found_dates = 0
+
+while found_dates < 15:
+    current_date += BDay(1)
+    if is_trading_day(current_date):
+        future_dates.append(current_date)
+        found_dates += 1
+        print(f"Menambahkan {current_date.date()} sebagai hari trading ke-{found_dates}")
+
+# 6. Lakukan prediksi
+current_lag = data['y'].iloc[-1]
+forecast_values = []
+for _ in range(15):
+    forecast_values.append(best_model.predict([[current_lag]])[0])
+    current_lag = forecast_values[-1]
+
+# 7. Hasil akhir
 forecast_df = pd.DataFrame({
     'Date': future_dates,
-    'Predicted_Price': future_predictions
+    'Forecast': forecast_values
 })
 
-# Simpan hasil peramalan ke file Excel
-forecast_output_path = 'C:/Users/HP PAVILION/Downloads/forecast_results.xlsx'
-forecast_df.to_excel(forecast_output_path, index=False)
-print(f"\nForecast results saved to {forecast_output_path}")
+# 8. Simpan dan tampilkan
+forecast_df.to_excel('forecast_FIXED.xlsx', index=False)
 
-# Tampilkan hasil peramalan
-print("\nHasil Peramalan 15 Periode ke Depan:")
-print(forecast_df)
+print("\nHasil Peramalan 15 Hari Trading yang Benar:")
+print(forecast_df.to_string())
 
+# Plotting
+plt.figure(figsize=(12,6))
+plt.plot(data['Date'][-30:], data['y'][-30:], 'b-', label='Data Historis')
+plt.plot(forecast_df['Date'], forecast_df['Forecast'], 'ro--', label='Prediksi')
+plt.title('Peramalan 15 Hari Trading (Fix)')
+plt.legend()
+plt.grid(True)
+plt.show()
 
 # In[ ]:
 
