@@ -3,268 +3,372 @@
 
 # In[1]:
 
-
 import numpy as np
 import pandas as pd
 from sklearn.svm import SVR
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_percentage_error
 import matplotlib.pyplot as plt
-from pandas.tseries.offsets import BDay  # Business Day
-
-# Set random seed for reproducibility
-np.random.seed(42)
-
-# Load dataset
-file_path = 'C:/Users/HP PAVILION/Downloads/utut.xlsx'
-try:
-    data = pd.read_excel(file_path)
-    data = data.dropna()
-    data = data.sort_values(by='Date')
-except Exception as e:
-    print(f"Error loading dataset: {e}")
-    exit()
-
-# Features and target
-X = data[['lag1']].values
-y = data['y'].values
-
-# Split data into training, validation, and testing sets (60:20:20)
-X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.4, shuffle=False, random_state=42)
-X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, shuffle=False, random_state=42)
-
-# Define the PSO algorithm for SVR parameter optimization
-def pso_svr(n_iterations, n_particles, lb, ub):
-    dim = len(lb)  # Dimensi (C, gamma, epsilon)
-    w_max = 0.9  # Inertia weight max
-    w_min = 0.4  # Inertia weight min
-    c1 = 2.0  # Cognitive parameter
-    c2 = 2.0  # Social parameter
-    v_max = (np.array(ub) - np.array(lb)) * 0.2  # Maximum velocity (20% dari rentang parameter)
-    
-    # Inisialisasi posisi dan kecepatan partikel
-    particles = np.random.uniform(lb, ub, (n_particles, dim))
-    velocities = np.random.uniform(-v_max, v_max, (n_particles, dim))  # Kecepatan diinisialisasi secara acak
-    
-    # Tampilkan kecepatan awal
-    print("\nKecepatan Awal Partikel:")
-    print("Partikel\tKecepatan C\tKecepatan gamma\tKecepatan epsilon")
-    for i, velocity in enumerate(velocities):
-        print(f"{i+1}\t\t{velocity[0]:.4f}\t\t{velocity[1]:.4f}\t\t{velocity[2]:.4f}")
-    
-    # Inisialisasi best positions dan best scores
-    pbest_positions = particles.copy()
-    pbest_scores = np.array([float('inf')] * n_particles)
-    gbest_position = pbest_positions[0]
-    gbest_score = float('inf')
-    gbest_scores_history = []
-    
-    # Tabel 4.2: Nilai Awal Parameter Partikel
-    print("\nTabel 4.2: Nilai Awal Parameter Partikel")
-    print("Partikel\tC\t\tgamma\t\tepsilon")
-    for i, particle in enumerate(particles):
-        print(f"{i+1}\t\t{particle[0]:.4f}\t{particle[1]:.4f}\t{particle[2]:.4f}")
-    
-    # Tabel 4.3: Nilai Fitness (MAPE) Awal
-    print("\nTabel 4.3: Nilai Fitness (MAPE) Awal")
-    print("Partikel\tFitness (MAPE)")
-    for i, particle in enumerate(particles):
-        C, gamma, epsilon = particle
-        model = SVR(kernel='rbf', C=C, gamma=gamma, epsilon=epsilon)
-        model.fit(X_train, y_train)  # Melatih model menggunakan data training
-        y_pred_val = model.predict(X_val)  # Memprediksi menggunakan data validation
-        mape = mean_absolute_percentage_error(y_val, y_pred_val) * 100  # Menghitung MAPE dari data validation
-        pbest_scores[i] = mape
-        print(f"{i+1}\t\t{mape:.4f}%")
-        if mape < gbest_score:
-            gbest_score = mape
-            gbest_position = particle
-    
-    # Tabel 4.4: Nilai Px_best untuk Setiap Parameter dan Pf_best
-    print("\nTabel 4.4: Nilai Px_best untuk Setiap Parameter dan Pf_best")
-    print("Partikel\tPx_best C\tPx_best gamma\tPx_best epsilon\tPf_best (MAPE)")
-    for i in range(n_particles):
-        print(f"{i+1}\t\t{pbest_positions[i][0]:.4f}\t\t{pbest_positions[i][1]:.4f}\t\t{pbest_positions[i][2]:.4f}\t\t{pbest_scores[i]:.4f}%")
-    
-    # Iterasi PSO
-    for iteration in range(n_iterations):
-        w = w_max - (w_max - w_min) * iteration / n_iterations  # Update inertia weight
-        for i in range(n_particles):
-            # Update kecepatan
-            r1, r2 = np.random.rand(dim), np.random.rand(dim)
-            velocities[i] = (w * velocities[i] +
-                             c1 * r1 * (pbest_positions[i] - particles[i]) +
-                             c2 * r2 * (gbest_position - particles[i]))
-            velocities[i] = np.clip(velocities[i], -v_max, v_max)  # Batasi kecepatan
-            
-            # Update posisi
-            particles[i] += velocities[i]
-            particles[i] = np.clip(particles[i], lb, ub)  # Batasi posisi dalam lb dan ub
-            
-            # Hitung fitness baru
-            C, gamma, epsilon = particles[i]
-            model = SVR(kernel='rbf', C=C, gamma=gamma, epsilon=epsilon)
-            model.fit(X_train, y_train)  # Melatih model menggunakan data training
-            y_pred_val = model.predict(X_val)  # Memprediksi menggunakan data validation
-            mape = mean_absolute_percentage_error(y_val, y_pred_val) * 100  # Menghitung MAPE dari data validation
-            
-            # Update pbest dan gbest
-            if mape < pbest_scores[i]:
-                pbest_scores[i] = mape
-                pbest_positions[i] = particles[i]
-            if mape < gbest_score:
-                gbest_score = mape
-                gbest_position = particles[i]
-        
-        # Tampilkan kecepatan pada setiap iterasi (opsional)
-        if (iteration + 1) % 10 == 0:  # Cetak setiap 10 iterasi
-            print(f"\nKecepatan Partikel pada Iterasi {iteration + 1}:")
-            print("Partikel\tKecepatan C\tKecepatan gamma\tKecepatan epsilon")
-            for i, velocity in enumerate(velocities):
-                print(f"{i+1}\t\t{velocity[0]:.4f}\t\t{velocity[1]:.4f}\t\t{velocity[2]:.4f}")
-        
-        gbest_scores_history.append(gbest_score)
-        print(f"Iteration {iteration+1}/{n_iterations}, Best MAPE: {gbest_score:.4f}%")
-    
-    # Tampilkan kecepatan terakhir
-    print("\nKecepatan Terakhir Partikel:")
-    print("Partikel\tKecepatan C\tKecepatan gamma\tKecepatan epsilon")
-    for i, velocity in enumerate(velocities):
-        print(f"{i+1}\t\t{velocity[0]:.4f}\t\t{velocity[1]:.4f}\t\t{velocity[2]:.4f}")
-    
-    # Informasi Posisi Terbaik Partikel (Menggantikan Tabel 4.6)
-    print("\nPosisi Terbaik Partikel Setelah Iterasi:")
-    print(f"C = {gbest_position[0]:.4f}, gamma = {gbest_position[1]:.4f}, epsilon = {gbest_position[2]:.4f}")
-    
-    # Tabel 4.7: Partikel dan MAPE Konvergen pada Suatu Nilai
-    print("\nTabel 4.7: Partikel dan MAPE Konvergen pada Suatu Nilai")
-    print("Partikel\tC\t\tgamma\t\tepsilon\tMAPE (Validation)")
-    for i in range(n_particles):
-        print(f"{i+1}\t\t{pbest_positions[i][0]:.4f}\t{pbest_positions[i][1]:.4f}\t{pbest_positions[i][2]:.4f}\t{pbest_scores[i]:.4f}%")
-    
-    # Plot convergence
-    plt.plot(range(n_iterations), gbest_scores_history)
-    plt.xlabel('Iteration')
-    plt.ylabel('Best MAPE')
-    plt.title('Convergence of PSO')
-    plt.show()
-    
-    return gbest_position, gbest_score
-
-# Define the bounds for C, gamma, and epsilon
-lb = [0.1, 0.0001, 0.0001]
-ub = [1000, 1, 1]
-
-# Perform PSO optimization
-best_params, best_mape = pso_svr(n_iterations=100, n_particles=30, lb=lb, ub=ub)
-
-# Train the SVR model with the best parameters found by PSO
-best_C, best_gamma, best_epsilon = best_params
-best_model = SVR(kernel='rbf', C=best_C, gamma=best_gamma, epsilon=best_epsilon)
-best_model.fit(X_train, y_train)  # Melatih model menggunakan data training
-
-# Predict on the test set
-y_pred_test = best_model.predict(X_test)  # Memprediksi menggunakan data testing
-
-# Calculate MAPE for the test set
-mape_test = mean_absolute_percentage_error(y_test, y_pred_test) * 100
-print(f"\nBest Parameters (C, gamma, epsilon): {best_params}")
-print(f"MAPE with PSO-optimized SVR on Test Set: {mape_test:.4f}%")
-
-# Create a DataFrame to store the comparison results
-comparison_df = pd.DataFrame({
-    'Actual': y_test,
-    'Predicted': y_pred_test
-})
-
-# Save the comparison results to an Excel file
-output_file_path = 'C:/Users/HP PAVILION/Downloads/comparison_results.xlsx'
-comparison_df.to_excel(output_file_path, index=False)
-print(f"\nComparison results saved to {output_file_path}")
-
-# Plot perbandingan actual vs predicted
-plt.figure(figsize=(10, 6))
-plt.plot(y_test, label='Actual Values', color='blue', marker='o', linestyle='-', linewidth=1, markersize=5)
-plt.plot(y_pred_test, label='Predicted Values', color='red', marker='x', linestyle='--', linewidth=1, markersize=5)
-plt.xlabel('Sample Index')
-plt.ylabel('Target Value')
-plt.title('Actual vs Predicted Values (PSO-Optimized SVR)')
-plt.legend()
-plt.grid(True)
-plt.show()
-
-# ====================================================
-# 6. Peramalan 15 Hari Trading ke Depan (FIXED VERSION)
-# ====================================================
-
+from pandas.tseries.offsets import BDay
+from mpl_toolkits.mplot3d import Axes3D
 from pandas.tseries.holiday import AbstractHolidayCalendar, Holiday
 import datetime
 
-# 1. Definisikan Kalender Libur yang Akurat
-class ExactHolidayCalendar(AbstractHolidayCalendar):
-    rules = [
-        # Libur Desember
-        Holiday('New Year Eve', month=12, day=31),
+# 1. SETUP DAN PREPROSES DATA ==============================================
+
+np.random.seed(42)
+
+def muat_data(filepath):
+    try:
+        data = pd.read_excel(filepath)
+        data = data.dropna()
+        data = data.sort_values(by='Date')
+        print("Dataset berhasil dimuat, bentuk:", data.shape)
+        return data
+    except Exception as e:
+        print(f"Gagal memuat dataset: {e}")
+        exit()
+
+file_path = 'C:/Users/HP PAVILION/Downloads/utut.xlsx'
+data = muat_data(file_path)
+
+X = data[['lag1']].values  
+y = data['y'].values
+
+def pisah_data(X, y, dates):
+    X_train, X_temp, y_train, y_temp, dates_train, dates_temp = train_test_split(
+        X, y, dates, test_size=0.4, shuffle=False, random_state=42)
+    X_val, X_test, y_val, y_test, dates_val, dates_test = train_test_split(
+        X_temp, y_temp, dates_temp, test_size=0.5, shuffle=False, random_state=42)
+    return (X_train, X_val, X_test, y_train, y_val, y_test, dates_train, dates_val, dates_test)
+
+(X_train, X_val, X_test, 
+ y_train, y_val, y_test,
+ dates_train, dates_val, dates_test) = pisah_data(X, y, data['Date'])
+
+# 2. IMPLEMENTASI PSO-SVR =================================================
+
+def pso_svr(n_iterasi, n_partikel, batas_bawah, batas_atas, toleransi=1e-4, maks_iterasi_tanpa_perbaikan=10):
+    
+    dimensi = len(batas_bawah)
+    lb = np.array(batas_bawah)
+    ub = np.array(batas_atas)
+    
+    # Parameter PSO
+    w_max = 0.9
+    w_min = 0.2
+    c1_awal = 2.5
+    c1_akhir = 1.5
+    c2_awal = 1.5  
+    c2_akhir = 2.5
+    v_maks = (ub - lb) * 0.3
+    
+    # Inisialisasi partikel
+    partikel = np.random.uniform(lb, ub, (n_partikel, dimensi))
+    kecepatan = np.random.uniform(-v_maks, v_maks, (n_partikel, dimensi))
+    
+    # Inisialisasi best
+    pbest_posisi = partikel.copy()
+    pbest_skor = np.full(n_partikel, np.inf)
+    gbest_posisi = partikel[0].copy()
+    gbest_skor = np.inf
+    
+    # Penyimpanan history
+    history = {
+        'gbest_skor': [],
+        'gbest_params': [],
+        'semua_partikel': [],
+        'semua_kecepatan': []
+    }
+
+    # 2.1 INISIALISASI ====================================================
+    
+    def print_pemisah(lebar=80):
+        print("=" * lebar)
+    
+    def print_tabel_partikel(partikel, kecepatan, iterasi=None):
+        if iterasi is not None:
+            print(f"\nITERASI {iterasi} - POSISI DAN KECEPATAN PARTIKEL")
+        print_pemisah()
+        print("| Part | C              | gamma          | epsilon        | Kecepatan C    | Kecepatan gamma| Kecepatan eps  |")
+        print_pemisah()
+        for i in range(len(partikel)):
+            print(f"| {i+1:4} | {partikel[i][0]:<14.6f} | {partikel[i][1]:<14.6f} | {partikel[i][2]:<14.6f} | "
+                  f"{kecepatan[i][0]:<14.6f} | {kecepatan[i][1]:<14.6f} | {kecepatan[i][2]:<14.6f} |")
+        print_pemisah()
+    
+    print("\nINISIALISASI")
+    print_tabel_partikel(partikel, kecepatan, "Awal")
+    
+    print("\nEVALUASI FITNESS AWAL")
+    print_pemisah()
+    print("| Part | MAPE (%)       |")
+    print_pemisah()
+    
+    for i in range(n_partikel):
+        model = SVR(kernel='rbf', C=partikel[i][0], 
+                   gamma=partikel[i][1], epsilon=partikel[i][2])
+        model.fit(X_train, y_train)
+        mape = mean_absolute_percentage_error(y_val, model.predict(X_val)) * 100
+        pbest_skor[i] = mape
         
-        # Libur Januari
-        Holiday('New Year', month=1, day=1),
-        # Holiday('Libur Contoh', month=1, day=2),  # Hapus komentar jika 2 Jan libur
-        # Tambahkan semua libur resmi sesuai bursa
+        if mape < gbest_skor:
+            gbest_skor = mape
+            gbest_posisi = partikel[i].copy()
+        
+        print(f"| {i+1:4} | {mape:<14.6f} |")
+    
+    print_pemisah()
+    
+    history['gbest_skor'].append(gbest_skor)
+    history['gbest_params'].append(gbest_posisi.copy())
+    history['semua_partikel'].append(partikel.copy())
+    history['semua_kecepatan'].append(kecepatan.copy())
+    
+    # 2.2 ITERASI UTAMA ===================================================
+    
+    print("\nMEMULAI OPTIMASI")
+    penghitung_stagnan = 0
+    
+    for iterasi in range(n_iterasi):
+        # Parameter adaptif
+        w = w_max - (w_max - w_min) * iterasi / n_iterasi
+        c1 = c1_awal - (c1_awal - c1_akhir) * iterasi / n_iterasi
+        c2 = c2_awal + (c2_akhir - c2_awal) * iterasi / n_iterasi
+        
+        skor_sebelumnya = gbest_skor
+        
+        # Update setiap partikel
+        for i in range(n_partikel):
+            # Update kecepatan
+            r1, r2 = np.random.rand(dimensi), np.random.rand(dimensi)
+            kognitif = c1 * r1 * (pbest_posisi[i] - partikel[i])
+            sosial = c2 * r2 * (gbest_posisi - partikel[i])
+            kecepatan[i] = w * kecepatan[i] + kognitif + sosial
+            kecepatan[i] = np.clip(kecepatan[i], -v_maks, v_maks)
+            
+            # Update posisi
+            partikel[i] += kecepatan[i]
+            partikel[i] = np.clip(partikel[i], lb, ub)
+            
+            # Evaluasi
+            model = SVR(kernel='rbf', C=partikel[i][0],
+                       gamma=partikel[i][1], epsilon=partikel[i][2])
+            model.fit(X_train, y_train)
+            mape = mean_absolute_percentage_error(y_val, model.predict(X_val)) * 100
+            
+            # Update personal best
+            if mape < pbest_skor[i]:
+                pbest_skor[i] = mape
+                pbest_posisi[i] = partikel[i].copy()
+            
+            # Update global best
+            if mape < gbest_skor:
+                gbest_skor = mape
+                gbest_posisi = partikel[i].copy()
+        
+        # Simpan history
+        history['gbest_skor'].append(gbest_skor)
+        history['gbest_params'].append(gbest_posisi.copy())
+        history['semua_partikel'].append(partikel.copy())
+        history['semua_kecepatan'].append(kecepatan.copy())
+        
+        # Cek konvergensi
+        perbaikan = skor_sebelumnya - gbest_skor
+        if abs(perbaikan) < toleransi:
+            penghitung_stagnan += 1
+        else:
+            penghitung_stagnan = 0
+        
+        konvergen = penghitung_stagnan >= maks_iterasi_tanpa_perbaikan
+        
+        # 2.3 TRACKING ITERASI ============================================
+        
+        if (iterasi < 10) or (iterasi % 5 == 0) or konvergen:
+            print(f"\nITERASI {iterasi + 1}")
+            print(f"MAPE Terbaik: {gbest_skor:.6f}%")
+            print(f"Parameter: C={gbest_posisi[0]:.6f}, gamma={gbest_posisi[1]:.6f}, epsilon={gbest_posisi[2]:.6f}")
+            print(f"Perbaikan: {perbaikan:.6f}%")
+            print(f"Status: {'KONVERGEN' if konvergen else 'LANJUT'}")
+            
+            if iterasi < 10 or iterasi % 10 == 0 or konvergen:
+                print_tabel_partikel(partikel, kecepatan, iterasi + 1)
+        
+        if konvergen:
+            break
+    
+    # 2.4 HASIL AKHIR =====================================================
+    
+    print("\nOPTIMASI SELESAI")
+    print(f"MAPE Terbaik: {gbest_skor:.6f}%")
+    print(f"Parameter Optimal: C={gbest_posisi[0]:.6f}, gamma={gbest_posisi[1]:.6f}, epsilon={gbest_posisi[2]:.6f}")
+    
+    # Hitung perbaikan
+    mape_awal = history['gbest_skor'][0]
+    mape_akhir = gbest_skor
+    perbaikan_total = mape_awal - mape_akhir
+    
+    # 2.5 TABEL RINGKASAN KONVERGENSI =====================================
+    
+    print("\n")
+    print("=" * 50)
+    print("TABEL 5: RINGKASAN KONVERGENSI")
+    print("=" * 50)
+    print("-" * 80)
+    print("| {:<15} | {:<30} |".format("Metric", "Value"))
+    print("-" * 80)
+    print("| {:<15} | {:<30} |".format("Total Iterasi", str(iterasi + 1)))
+    print("| {:<15} | {:<30.6f}% |".format("MAPE Awal", mape_awal))
+    print("| {:<15} | {:<30.6f}% |".format("MAPE Akhir", mape_akhir))
+    print("| {:<15} | {:<30.6f}% |".format("Perbaikan", perbaikan_total))
+    print("| {:<15} | {:<30} |".format("Status", "Konvergen" if konvergen else "Tidak Konvergen"))
+    print("| {:<15} | {:<30.6f} |".format("Best C", gbest_posisi[0]))
+    print("| {:<15} | {:<30.6f} |".format("Best gamma", gbest_posisi[1]))
+    print("| {:<15} | {:<30.6f} |".format("Best epsilon", gbest_posisi[2]))
+    print("-" * 80)
+
+    # 3. VISUALISASI ======================================================
+    
+    # 3.1 Plot Konvergensi
+    plt.figure(figsize=(12, 6))
+    plt.plot(history['gbest_skor'], 'b-o', linewidth=1, markersize=4)
+    plt.title('Konvergensi PSO: MAPE Terbaik vs Iterasi')
+    plt.xlabel('Iterasi')
+    plt.ylabel('MAPE (%)')
+    plt.grid(True)
+    plt.show()
+    
+    # 3.2 Plot Parameter
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 12))
+    
+    ax1.plot([p[0] for p in history['gbest_params']], 'r-o', markersize=4)
+    ax1.set_ylabel('Nilai C')
+    ax1.set_title('Evolusi Parameter C')
+    ax1.grid(True)
+    
+    ax2.plot([p[1] for p in history['gbest_params']], 'g-o', markersize=4)
+    ax2.set_ylabel('Nilai Gamma')
+    ax2.set_title('Evolusi Parameter Gamma')
+    ax2.grid(True)
+    
+    ax3.plot([p[2] for p in history['gbest_params']], 'b-o', markersize=4)
+    ax3.set_ylabel('Nilai Epsilon')
+    ax3.set_xlabel('Iterasi')
+    ax3.set_title('Evolusi Parameter Epsilon')
+    ax3.grid(True)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # 3.3 Visualisasi 3D
+    fig = plt.figure(figsize=(14, 10))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    for p in range(n_partikel):
+        ax.plot([h[p][0] for h in history['semua_partikel']],
+                [h[p][1] for h in history['semua_partikel']],
+                [h[p][2] for h in history['semua_partikel']],
+                alpha=0.3, linewidth=0.5)
+    
+    ax.scatter(gbest_posisi[0], gbest_posisi[1], gbest_posisi[2],
+              c='red', s=200, marker='*', label='Global Best')
+    
+    ax.set_xlabel('C')
+    ax.set_ylabel('Gamma')
+    ax.set_zlabel('Epsilon')
+    ax.set_title('Trajektori Partikel dalam Ruang Parameter')
+    ax.legend()
+    plt.show()
+    
+    return gbest_posisi, gbest_skor, history
+
+# 4. JALANKAN OPTIMASI ====================================================
+
+batas_bawah = [0.1, 0.0001, 0.0001]
+batas_atas = [1000, 1, 1]
+
+print("\nMEMULAI OPTIMASI PSO")
+best_params, best_mape, history = pso_svr(
+    n_iterasi=100,
+    n_partikel=30,
+    batas_bawah=batas_bawah,
+    batas_atas=batas_atas,
+    toleransi=0.0001,
+    maks_iterasi_tanpa_perbaikan=10
+)
+
+# 5. EVALUASI MODEL FINAL =================================================
+
+model_final = SVR(kernel='rbf', C=best_params[0],
+                 gamma=best_params[1], epsilon=best_params[2])
+model_final.fit(X_train, y_train)
+
+y_pred_test = model_final.predict(X_test)
+mape_test = mean_absolute_percentage_error(y_test, y_pred_test) * 100
+
+print("\nEVALUASI MODEL FINAL")
+print(f"Test MAPE: {mape_test:.4f}%")
+
+# 6. PERAMALAN ============================================================
+
+class KalenderHariLibur(AbstractHolidayCalendar):
+    rules = [
+        Holiday('Tahun Baru', month=1, day=1),
+        Holiday('Natal', month=12, day=25)
     ]
 
-# 2. Dapatkan tanggal terakhir dari data
-last_date = data['Date'].iloc[-1]
-print(f"\nTanggal terakhir dalam dataset: {last_date}")
+def buat_tanggal_ramalan(tanggal_terakhir, n_hari=15):
+    kalender = KalenderHariLibur()
+    libur = kalender.holidays(start=tanggal_terakhir, end=tanggal_terakhir + datetime.timedelta(days=365))
+    
+    tanggal_ramalan = []
+    tanggal_sekarang = tanggal_terakhir
+    
+    while len(tanggal_ramalan) < n_hari:
+        tanggal_sekarang += BDay(1)
+        if tanggal_sekarang not in libur:
+            tanggal_ramalan.append(tanggal_sekarang)
+    
+    return tanggal_ramalan
 
-# 3. Generate kalender libur
-cal = ExactHolidayCalendar()
-holidays = cal.holidays(start=last_date, end=last_date + datetime.timedelta(days=60))
+tanggal_terakhir = data['Date'].iloc[-1]
+tanggal_ramalan = buat_tanggal_ramalan(tanggal_terakhir)
 
-# 4. Fungsi validasi hari trading
-def is_trading_day(date):
-    # Senin-Jumat dan bukan hari libur
-    return date.weekday() < 5 and date not in holidays
+ramalan = []
+lag_sekarang = y[-1]
 
-# 5. Generate 15 hari trading VALID
-future_dates = []
-current_date = last_date
-found_dates = 0
-
-while found_dates < 15:
-    current_date += BDay(1)
-    if is_trading_day(current_date):
-        future_dates.append(current_date)
-        found_dates += 1
-        print(f"Menambahkan {current_date.date()} sebagai hari trading ke-{found_dates}")
-
-# 6. Lakukan prediksi
-current_lag = data['y'].iloc[-1]
-forecast_values = []
 for _ in range(15):
-    forecast_values.append(best_model.predict([[current_lag]])[0])
-    current_lag = forecast_values[-1]
+    prediksi = model_final.predict([[lag_sekarang]])[0]
+    ramalan.append(prediksi)
+    lag_sekarang = prediksi
 
-# 7. Hasil akhir
-forecast_df = pd.DataFrame({
-    'Date': future_dates,
-    'Forecast': forecast_values
+df_ramalan = pd.DataFrame({
+    'Tanggal': tanggal_ramalan,
+    'Ramalan': ramalan
 })
 
-# 8. Simpan dan tampilkan
-forecast_df.to_excel('forecast_FIXED.xlsx', index=False)
+print("\nRAMALAN 15 HARI KE DEPAN")
+print(df_ramalan.to_string(index=False))
 
-print("\nHasil Peramalan 15 Hari Trading yang Benar:")
-print(forecast_df.to_string())
+# 7. SIMPAN HASIL =========================================================
 
-# Plotting
-plt.figure(figsize=(12,6))
-plt.plot(data['Date'][-30:], data['y'][-30:], 'b-', label='Data Historis')
-plt.plot(forecast_df['Date'], forecast_df['Forecast'], 'ro--', label='Prediksi')
-plt.title('Peramalan 15 Hari Trading (Fix)')
-plt.legend()
-plt.grid(True)
-plt.show()
+# Simpan history konvergensi
+df_history = pd.DataFrame({
+    'iterasi': range(len(history['gbest_skor'])),
+    'best_mape': history['gbest_skor'],
+    'best_C': [p[0] for p in history['gbest_params']],
+    'best_gamma': [p[1] for p in history['gbest_params']],
+    'best_epsilon': [p[2] for p in history['gbest_params']]
+})
 
+df_history.to_excel('history_konvergensi_pso.xlsx', index=False)
+
+# Simpan ramalan
+df_ramalan.to_excel('ramalan_15_hari.xlsx', index=False)
+
+print("\nHasil disimpan ke file:")
+print("- history_konvergensi_pso.xlsx")
+print("- ramalan_15_hari.xlsx")
 # In[ ]:
 
 
