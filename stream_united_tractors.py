@@ -83,7 +83,7 @@ if uploaded_file is not None:
     elif algorithm == "PSO":
         st.header("🐦 Particle Swarm Optimization (PSO)")
         try:
-            # Load model PSO
+            # Load model PSO dengan parameter yang sesuai dengan implementasi asli
             model = joblib.load('pso_model.sav')
             
             # Evaluasi
@@ -96,11 +96,21 @@ if uploaded_file is not None:
                       f"- MAPE Validation: `{mape_val:.4f}%`\n"
                       f"- MAPE Testing: `{mape_test:.4f}%`\n"
                       f"- Parameter Terbaik:\n"
-                      f"  - C: `{model.C:.6f}`\n"
-                      f"  - gamma: `{model.gamma:.6f}`\n"
-                      f"  - epsilon: `{model.epsilon:.6f}`")
+                      f"  - C: `{model.C:.6f}` (range: 0.1-1000)\n"
+                      f"  - gamma: `{model.gamma:.6f}` (range: 0.0001-1)\n"
+                      f"  - epsilon: `{model.epsilon:.6f}` (range: 0.0001-1)")
+            
+            # Plot konvergensi (jika tersedia dalam model)
+            if hasattr(model, 'convergence_history_'):
+                fig_conv, ax_conv = plt.subplots(figsize=(12,6))
+                ax_conv.plot(model.convergence_history_['gbest_skor'], 'b-o', linewidth=1, markersize=4)
+                ax_conv.set_title('Konvergensi PSO: MAPE Terbaik vs Iterasi')
+                ax_conv.set_xlabel('Iterasi')
+                ax_conv.set_ylabel('MAPE (%)')
+                ax_conv.grid(True)
+                st.pyplot(fig_conv)
 
-            # Plot hasil
+            # Plot hasil prediksi
             fig, ax = plt.subplots(figsize=(12,6))
             ax.plot(dates_test, y_test, 'g-', label='Aktual', marker='o')
             ax.plot(dates_test, y_pred_test, 'm--', label='Prediksi PSO', marker='x')
