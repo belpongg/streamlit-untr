@@ -160,7 +160,6 @@ results = pd.DataFrame({
 results.to_excel('C:/Users/HP PAVILION/Downloads/hasil_prediksi.xlsx', index=False)
 print("\nHasil perbandingan data aktual dan prediksi telah disimpan ke dalam file 'hasil_prediksi.xlsx'.")
 
-
 # In[ ]:
 
 
