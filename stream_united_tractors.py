@@ -10,6 +10,9 @@ from pandas.tseries.offsets import BDay
 from pandas.tseries.holiday import AbstractHolidayCalendar, Holiday
 import datetime
 
+# Set random seed untuk reproduktibilitas
+np.random.seed(42)
+
 # Judul aplikasi
 st.title("Perbandingan Kinerja FOA dan PSO dalam Optimasi SVR untuk Peramalan Harga Saham United Tractors")
 
@@ -19,8 +22,166 @@ class IDXTradingCalendar(AbstractHolidayCalendar):
         Holiday('New Year', month=1, day=1),
         Holiday('New Year Eve', month=12, day=31),
         Holiday('Natal', month=12, day=25),
-        # Tambahkan hari libur bursa Indonesia lainnya sesuai kebutuhan
     ]
+
+# Implementasi FOA
+def foa_optimization(X_train, y_train, X_val, y_val, n_iterations=100, n_flies=30, 
+                    lb=[0.1, 0.0001, 0.0001], ub=[1000, 1, 1], 
+                    tolerance=0.0001, max_stall_iterations=10):
+    
+    lb = np.array(lb)
+    ub = np.array(ub)
+    dim = len(lb)
+    
+    # Inisialisasi lalat
+    flies = np.random.uniform(lb, ub, (n_flies, dim))
+    best_fly = flies[0]
+    best_mape = float('inf')
+    
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    history = {'best_mape': [], 'best_params': []}
+    
+    # Hitung nilai fitness awal
+    initial_mape = []
+    for i in range(n_flies):
+        model = SVR(kernel='rbf', C=flies[i][0], gamma=flies[i][1], epsilon=flies[i][2])
+        model.fit(X_train, y_train)
+        mape = mean_absolute_percentage_error(y_val, model.predict(X_val)) * 100
+        initial_mape.append(mape)
+        if mape < best_mape:
+            best_mape = mape
+            best_fly = flies[i].copy()
+    
+    history['best_mape'].append(best_mape)
+    history['best_params'].append(best_fly.copy())
+    
+    stall_counter = 0
+    
+    for iteration in range(1, n_iterations + 1):
+        previous_best = best_mape
+        
+        # Update posisi lalat
+        for i in range(n_flies):
+            flies[i] = best_fly + np.random.normal(0, 1, dim) * (ub - lb) * 0.1
+            flies[i] = np.clip(flies[i], lb, ub)
+        
+        # Hitung MAPE baru
+        current_mape = []
+        for i in range(n_flies):
+            model = SVR(kernel='rbf', C=flies[i][0], gamma=flies[i][1], epsilon=flies[i][2])
+            model.fit(X_train, y_train)
+            mape = mean_absolute_percentage_error(y_val, model.predict(X_val)) * 100
+            current_mape.append(mape)
+            if mape < best_mape:
+                best_mape = mape
+                best_fly = flies[i].copy()
+        
+        # Update progress
+        progress = (iteration + 1) / n_iterations
+        progress_bar.progress(progress)
+        status_text.text(f"Iterasi {iteration}/{n_iterations} - Best MAPE: {best_mape:.4f}%")
+        
+        history['best_mape'].append(best_mape)
+        history['best_params'].append(best_fly.copy())
+        
+        # Cek konvergensi
+        mape_change = previous_best - best_mape
+        if abs(mape_change) < tolerance:
+            stall_counter += 1
+            if stall_counter >= max_stall_iterations:
+                break
+        else:
+            stall_counter = 0
+    
+    return best_fly, best_mape, history
+
+# Implementasi PSO
+def pso_optimization(X_train, y_train, X_val, y_val, n_iterations=100, n_particles=30, 
+                    lb=[0.1, 0.0001, 0.0001], ub=[1000, 1, 1], 
+                    tolerance=0.0001, max_stall_iterations=10):
+    
+    dimensi = len(lb)
+    lb = np.array(lb)
+    ub = np.array(ub)
+    
+    # Parameter PSO
+    w_max = 0.9
+    w_min = 0.2
+    c1_awal = 2.5
+    c1_akhir = 1.5
+    c2_awal = 1.5  
+    c2_akhir = 2.5
+    v_maks = (ub - lb) * 0.3
+    
+    # Inisialisasi partikel
+    particles = np.random.uniform(lb, ub, (n_particles, dimensi))
+    velocities = np.random.uniform(-v_maks, v_maks, (n_particles, dimensi))
+    
+    # Inisialisasi best
+    pbest_positions = particles.copy()
+    pbest_scores = np.full(n_particles, np.inf)
+    gbest_position = particles[0].copy()
+    gbest_score = np.inf
+    
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    history = {'best_mape': [], 'best_params': []}
+    
+    for iteration in range(n_iterations):
+        # Parameter adaptif
+        w = w_max - (w_max - w_min) * iteration / n_iterations
+        c1 = c1_awal - (c1_awal - c1_akhir) * iteration / n_iterations
+        c2 = c2_awal + (c2_akhir - c2_awal) * iteration / n_iterations
+        
+        previous_best = gbest_score
+        
+        # Update setiap partikel
+        for i in range(n_particles):
+            # Update kecepatan
+            r1, r2 = np.random.rand(dimensi), np.random.rand(dimensi)
+            cognitive = c1 * r1 * (pbest_positions[i] - particles[i])
+            social = c2 * r2 * (gbest_position - particles[i])
+            velocities[i] = w * velocities[i] + cognitive + social
+            velocities[i] = np.clip(velocities[i], -v_maks, v_maks)
+            
+            # Update posisi
+            particles[i] += velocities[i]
+            particles[i] = np.clip(particles[i], lb, ub)
+            
+            # Evaluasi
+            model = SVR(kernel='rbf', C=particles[i][0], gamma=particles[i][1], epsilon=particles[i][2])
+            model.fit(X_train, y_train)
+            mape = mean_absolute_percentage_error(y_val, model.predict(X_val)) * 100
+            
+            # Update personal best
+            if mape < pbest_scores[i]:
+                pbest_scores[i] = mape
+                pbest_positions[i] = particles[i].copy()
+            
+            # Update global best
+            if mape < gbest_score:
+                gbest_score = mape
+                gbest_position = particles[i].copy()
+        
+        # Update progress
+        progress = (iteration + 1) / n_iterations
+        progress_bar.progress(progress)
+        status_text.text(f"Iterasi {iteration + 1}/{n_iterations} - Best MAPE: {gbest_score:.4f}%")
+        
+        history['best_mape'].append(gbest_score)
+        history['best_params'].append(gbest_position.copy())
+        
+        # Cek konvergensi
+        improvement = previous_best - gbest_score
+        if abs(improvement) < tolerance:
+            stall_counter += 1
+            if stall_counter >= max_stall_iterations:
+                break
+        else:
+            stall_counter = 0
+    
+    return gbest_position, gbest_score, history
 
 # Upload dataset
 uploaded_file = st.file_uploader("Upload dataset (Excel)", type=["xlsx"])
@@ -51,27 +212,29 @@ if uploaded_file is not None:
         
         # Parameter FOA
         st.subheader("Parameter FOA")
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             n_iterations = st.number_input("Jumlah Iterasi", min_value=10, max_value=500, value=100)
         with col2:
             n_flies = st.number_input("Jumlah Lalat", min_value=5, max_value=100, value=30)
         with col3:
+            tolerance = st.number_input("Toleransi", min_value=0.00001, max_value=0.1, value=0.0001, format="%.5f")
+        with col4:
             max_stall = st.number_input("Maks Iterasi Stagnan", min_value=1, max_value=50, value=10)
         
         if st.button("Jalankan FOA"):
             with st.spinner('Menjalankan optimasi FOA...'):
-                # Inisialisasi parameter bounds
-                lb = [0.1, 0.0001, 0.0001]
-                ub = [1000, 1, 1]
+                best_params, best_mape, history = foa_optimization(
+                    X_train, y_train, X_val, y_val,
+                    n_iterations=n_iterations,
+                    n_flies=n_flies,
+                    tolerance=tolerance,
+                    max_stall_iterations=max_stall
+                )
                 
-                # Jalankan FOA (simulasi - dalam praktiknya Anda akan memanggil fungsi FOA sebenarnya)
-                best_fly = np.random.uniform(lb, ub, size=3)
-                best_mape = np.random.uniform(1, 10)
-                
-                # Simpan model (simulasi)
-                model = SVR(kernel='rbf', C=best_fly[0], gamma=best_fly[1], epsilon=best_fly[2])
-                model.fit(X_train, y_train)
+                # Simpan model
+                model = SVR(kernel='rbf', C=best_params[0], gamma=best_params[1], epsilon=best_params[2])
+                model.fit(np.vstack((X_train, X_val)), np.concatenate((y_train, y_val)))
                 joblib.dump(model, 'foa_model.sav')
                 
                 st.success("Optimasi FOA selesai!")
@@ -80,12 +243,21 @@ if uploaded_file is not None:
                 st.subheader("Hasil Optimasi")
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Best C", f"{best_fly[0]:.6f}")
+                    st.metric("Best C", f"{best_params[0]:.6f}")
                 with col2:
-                    st.metric("Best gamma", f"{best_fly[1]:.6f}")
+                    st.metric("Best gamma", f"{best_params[1]:.6f}")
                 with col3:
-                    st.metric("Best epsilon", f"{best_fly[2]:.6f}")
-                st.metric("Best MAPE", f"{best_mape:.6f}%")
+                    st.metric("Best epsilon", f"{best_params[2]:.6f}")
+                st.metric("Best MAPE (Validation)", f"{best_mape:.6f}%")
+
+                # Plot konvergensi
+                fig, ax = plt.subplots(figsize=(10, 5))
+                ax.plot(history['best_mape'], 'b-o')
+                ax.set_title('Konvergensi FOA')
+                ax.set_xlabel('Iterasi')
+                ax.set_ylabel('MAPE (%)')
+                ax.grid(True)
+                st.pyplot(fig)
 
         # Load model dan evaluasi
         try:
@@ -116,27 +288,29 @@ if uploaded_file is not None:
         
         # Parameter PSO
         st.subheader("Parameter PSO")
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             n_iterations = st.number_input("Jumlah Iterasi", min_value=10, max_value=500, value=100)
         with col2:
             n_particles = st.number_input("Jumlah Partikel", min_value=5, max_value=100, value=30)
         with col3:
+            tolerance = st.number_input("Toleransi", min_value=0.00001, max_value=0.1, value=0.0001, format="%.5f")
+        with col4:
             max_stall = st.number_input("Maks Iterasi Stagnan", min_value=1, max_value=50, value=10)
         
         if st.button("Jalankan PSO"):
             with st.spinner('Menjalankan optimasi PSO...'):
-                # Inisialisasi parameter bounds
-                lb = [0.1, 0.0001, 0.0001]
-                ub = [1000, 1, 1]
+                best_params, best_mape, history = pso_optimization(
+                    X_train, y_train, X_val, y_val,
+                    n_iterations=n_iterations,
+                    n_particles=n_particles,
+                    tolerance=tolerance,
+                    max_stall_iterations=max_stall
+                )
                 
-                # Jalankan PSO (simulasi - dalam praktiknya Anda akan memanggil fungsi PSO sebenarnya)
-                best_params = np.random.uniform(lb, ub, size=3)
-                best_mape = np.random.uniform(1, 10)
-                
-                # Simpan model (simulasi)
+                # Simpan model
                 model = SVR(kernel='rbf', C=best_params[0], gamma=best_params[1], epsilon=best_params[2])
-                model.fit(X_train, y_train)
+                model.fit(np.vstack((X_train, X_val)), np.concatenate((y_train, y_val)))
                 joblib.dump(model, 'pso_model.sav')
                 
                 st.success("Optimasi PSO selesai!")
@@ -150,7 +324,16 @@ if uploaded_file is not None:
                     st.metric("Best gamma", f"{best_params[1]:.6f}")
                 with col3:
                     st.metric("Best epsilon", f"{best_params[2]:.6f}")
-                st.metric("Best MAPE", f"{best_mape:.6f}%")
+                st.metric("Best MAPE (Validation)", f"{best_mape:.6f}%")
+
+                # Plot konvergensi
+                fig, ax = plt.subplots(figsize=(10, 5))
+                ax.plot(history['best_mape'], 'b-o')
+                ax.set_title('Konvergensi PSO')
+                ax.set_xlabel('Iterasi')
+                ax.set_ylabel('MAPE (%)')
+                ax.grid(True)
+                st.pyplot(fig)
 
         # Load model dan evaluasi
         try:
@@ -176,9 +359,7 @@ if uploaded_file is not None:
         except FileNotFoundError:
             st.warning("Model PSO belum tersedia. Jalankan optimasi terlebih dahulu.")
 
-    # ====================================================
     # PREDIKSI 15 HARI TRADING KE DEPAN
-    # ====================================================
     st.header("Prediksi 15 Hari Trading ke Depan")
     
     # Dapatkan tanggal terakhir dari data
